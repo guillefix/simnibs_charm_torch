@@ -1,6 +1,6 @@
 import os
 #import numpy as np
-import torch as np
+import numpy as npy
 import pickle
 import scipy.io
 #import freesurfer as fs
@@ -15,6 +15,8 @@ from .SamsegUtility import *
 from .merge_alphas import kvlMergeAlphas, kvlGetMergingFractionsTable
 import charm_gems as gems
 import logging
+import torch as np
+import torch.nn.functional as F
 
 eps = np.finfo(float).eps
 
@@ -119,6 +121,7 @@ class Samseg:
             self.imageFileNames,
             self.transformedTemplateFileName)
 
+
         # Background masking: simply setting intensity values outside of a very rough brain mask to zero
         # ensures that they'll be skipped in all subsequent computations
         self.imageBuffers, self.mask = maskOutBackground(self.imageBuffers,
@@ -142,6 +145,12 @@ class Samseg:
                 names=self.modelSpecifications.names, legend_width=350)
             self.visualizer.show(images=self.imageBuffers, window_id='samsegment images',
                                  title='Samsegment Masked and Log-Transformed Contrasts')
+
+        self.imageBuffers = np.tensor(self.imageBuffers)
+        #self.transform = np.tensor(self.transform)
+        #self.voxelSpacing = np.tensor(self.voxelSpacing)
+        #self.cropping = np.tensor(self.cropping)
+        self.mask = np.tensor(self.mask)
 
     def process(self):
         # =======================================================================================
@@ -253,7 +262,8 @@ class Samseg:
         # Downsample the images and basis functions
         numberOfContrasts = self.imageBuffers.shape[-1]
         downSampledMask = self.mask[::downSamplingFactors[0], ::downSamplingFactors[1], ::downSamplingFactors[2]]
-        downSampledImageBuffers = np.zeros(downSampledMask.shape + (numberOfContrasts,), order='F')
+        #downSampledImageBuffers = np.zeros(downSampledMask.shape + (numberOfContrasts,), order='F')
+        downSampledImageBuffers = np.zeros(downSampledMask.shape + (numberOfContrasts,))
         for contrastNumber in range(numberOfContrasts):
             # logger.debug('first time contrastNumber=%d', contrastNumber)
             downSampledImageBuffers[:, :, :, contrastNumber] = self.imageBuffers[::downSamplingFactors[0],
@@ -263,7 +273,10 @@ class Samseg:
 
         # Compute the resulting transform, taking into account the downsampling
         downSamplingTransformMatrix = np.diag(1. / downSamplingFactors)
-        downSamplingTransformMatrix = np.pad(downSamplingTransformMatrix, (0, 1), mode='constant', constant_values=0)
+        downSamplingTransformMatrix = downSamplingTransformMatrix.cpu().numpy()
+        downSamplingTransformMatrix = npy.pad(downSamplingTransformMatrix, (0, 1), mode='constant', constant_values=0)
+        #downSamplingTransformMatrix = F.pad(downSamplingTransformMatrix, (0, 1, 0, 1), 'constant', 0)
+
         downSamplingTransformMatrix[3][3] = 1
         downSampledTransform = gems.KvlTransform(
             requireNumpyArray(downSamplingTransformMatrix @ self.transform.as_numpy_array))
@@ -357,9 +370,7 @@ class Samseg:
             # Downsample the images, the mask, the mesh, and the bias field basis functions (integer)
             logger.info('Setting up downsampled model')
             #downSamplingFactors = np.uint32(np.round(optimizationOptions.multiResolutionSpecification
-            downSamplingFactors = np.int64(np.round(optimizationOptions.multiResolutionSpecification
-                                                     [
-                                                         multiResolutionLevel].targetDownsampledVoxelSpacing / self.voxelSpacing))
+            downSamplingFactors = np.round(np.tensor(optimizationOptions.multiResolutionSpecification[multiResolutionLevel].targetDownsampledVoxelSpacing / self.voxelSpacing)).to(np.int64)
             downSamplingFactors[downSamplingFactors < 1] = 1
             downSampledImageBuffers, downSampledMask, downSampledMesh, downSampledInitialDeformationApplied, \
             downSampledTransform = self.getDownSampledModel(
@@ -368,6 +379,7 @@ class Samseg:
             self.biasField.downSampleBasisFunctions(downSamplingFactors)
 
             # Also downsample the strength of the hyperprior, if any
+            print(type(downSamplingFactors))
             self.gmm.downsampledHyperparameters(downSamplingFactors)
 
             # Save initial position at the start of this multi-resolution level

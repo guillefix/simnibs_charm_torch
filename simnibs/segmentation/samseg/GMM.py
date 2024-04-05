@@ -127,7 +127,8 @@ class GMM:
         #
         numberOfVoxels = data.shape[0]
 
-        gaussianPosteriors = np.zeros((numberOfVoxels, self.numberOfGaussians), order='F')
+        #gaussianPosteriors = np.zeros((numberOfVoxels, self.numberOfGaussians), order='F')
+        gaussianPosteriors = np.zeros((numberOfVoxels, self.numberOfGaussians))
         for classNumber in range(self.numberOfClasses):
             classPrior = classPriors[:, classNumber]
             numberOfComponents = self.numberOfGaussiansPerClass[classNumber]
