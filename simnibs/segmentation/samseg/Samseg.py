@@ -24,6 +24,8 @@ eps = np.finfo(float).eps
 def expand_dims(x, dim):
     return x.unsqueeze(dim)
 
+import torch
+torch.set_default_dtype(torch.float64)
 
 
 class Samseg:
@@ -416,7 +418,7 @@ class Samseg:
                 print("Get the priors at the current mesh position")
                 tmp = downSampledMesh.rasterize_2(downSampledMask.shape, -1)
                 downSampledClassPriors = tmp[downSampledMask.cpu().numpy()] / 65535
-                downSampledClassPriors = np.tensor(downSampledClassPriors).to(np.float).cuda()
+                downSampledClassPriors = np.tensor(downSampledClassPriors).cuda()
 
                 # Initialize the model parameters if needed
                 print("Initialize the model parameters if needed")
@@ -443,7 +445,7 @@ class Samseg:
 
                     # Precompute intensities after bias field correction for later use (really only caching something that
                     # doesn't really figure in the model
-                    downSampledBiasFields = self.biasField.getBiasFields(downSampledMask).to(np.float)
+                    downSampledBiasFields = self.biasField.getBiasFields(downSampledMask)
                     #print(downSampledImageBuffers)
                     downSampledData = downSampledImageBuffers[downSampledMask, :] - downSampledBiasFields[
                                                                                     downSampledMask, :]

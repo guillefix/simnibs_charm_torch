@@ -1,3 +1,4 @@
+import torch
 import charm_gems as gems
 from .ProbabilisticAtlas import ProbabilisticAtlas
 from .SamsegUtility import undoLogTransformAndBiasField, writeImage, maskOutBackground, logTransform, readCroppedImages
@@ -20,9 +21,9 @@ def writeBiasCorrectedImagesAndSegmentation(output_names_bias,
     # to call instance methods
     probabilisticAtlas = ProbabilisticAtlas()
     # Bias correct images
-    biasFields = parameters_and_inputs['biasFields']
-    imageBuffers = parameters_and_inputs['imageBuffers']
-    mask = parameters_and_inputs['mask']
+    biasFields = parameters_and_inputs['biasFields'].cpu().numpy()
+    imageBuffers = parameters_and_inputs['imageBuffers'].cpu().numpy()
+    mask = parameters_and_inputs['mask'].cpu().numpy()
 
     # Write these out
     exampleImageFileName = parameters_and_inputs['imageFileNames']
@@ -55,9 +56,9 @@ def writeBiasCorrectedImagesAndSegmentation(output_names_bias,
     fractionsTable = parameters_and_inputs['fractionsTable']
     GMMparameters = parameters_and_inputs['GMMParameters']
     numberOfGaussiansPerClass = parameters_and_inputs['gaussiansPerClass']
-    means = GMMparameters['means']
-    variances = GMMparameters['variances']
-    mixtureWeights = GMMparameters['mixtureWeights']
+    means = GMMparameters['means'].cpu().numpy()
+    variances = GMMparameters['variances'].cpu().numpy()
+    mixtureWeights = GMMparameters['mixtureWeights'].cpu().numpy()
     names = parameters_and_inputs['names']
     bg_label = names.index("Background")
     FreeSurferLabels = np.array(modelSpecifications.FreeSurferLabels,
@@ -136,9 +137,9 @@ def segmentUpsampled(input_bias_corrected, tissue_settings,
     fractionsTable = parameters_and_inputs['fractionsTable']
     GMMparameters = parameters_and_inputs['GMMParameters']
     numberOfGaussiansPerClass = parameters_and_inputs['gaussiansPerClass']
-    means = GMMparameters['means']
-    variances = GMMparameters['variances']
-    mixtureWeights = GMMparameters['mixtureWeights']
+    means = GMMparameters['means'].cpu().numpy()
+    variances = GMMparameters['variances'].cpu().numpy()
+    mixtureWeights = GMMparameters['mixtureWeights'].cpu().numpy()
     names = parameters_and_inputs['names']
     bg_label = names.index("Background")
     FreeSurferLabels = np.array(modelSpecifications.FreeSurferLabels,
@@ -261,7 +262,7 @@ def saveWarpField(template_name, warp_to_mni,
              initialDeformation=deformation,
              initialDeformationMeshCollectionFileName=deformationAtlasFileName)
 
-    imageBuffers = parameters_and_inputs['imageBuffers']
+    imageBuffers = parameters_and_inputs['imageBuffers'].cpu().numpy()
     coordmapImage = mesh.rasterize_values(imageBuffers.shape[0:-1],
                                           nodePositionsTemplateWorldSpace)
     # The image buffer is cropped so need to set
@@ -299,7 +300,7 @@ def _calculateSegmentationLoop(biasCorrectedImageBuffers,
     # We need an init of the GMM class
     # to call instance methods
     gmm = GMM(numberOfGaussiansPerClass, data.shape[1], True,
-              means, variances, mixtureWeights)
+              torch.tensor(means).cuda(), torch.tensor(variances).cuda(), torch.tensor(mixtureWeights).cuda())
 
     # These will store the max values and indices
     maxValues = np.zeros(biasCorrectedImageBuffers.shape[0:3],
@@ -356,9 +357,9 @@ def _calculateSegmentationLoop(biasCorrectedImageBuffers,
                 variance = variances[gaussianNumber, :, :]
                 mixtureWeight = mixtureWeights[gaussianNumber]
 
-                gaussianLikelihood = gmm.getGaussianLikelihoods(data,
-                                                                mean,
-                                                                variance)
+                gaussianLikelihood = gmm.getGaussianLikelihoods(torch.tensor(data).cuda(),
+                                                                torch.tensor(mean).cuda(),
+                                                                torch.tensor(variance).cuda()).cpu().numpy()
                 likelihoods += gaussianLikelihood * mixtureWeight * fraction
 
         # Now compute the non-normalized posterior

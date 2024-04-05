@@ -8,7 +8,6 @@ eps = np.finfo( float ).eps
 def expand_dims(x, dim):
     return x.unsqueeze(dim)
 
-
 class BiasField:
     def __init__(self, imageSize, smoothingKernelSize):
         self.fullBasisFunctions = self.getBiasFieldBasisFunctions(imageSize, smoothingKernelSize)
@@ -24,9 +23,16 @@ class BiasField:
             Ms[dimensionNumber] = kroneckerProductBasisFunctions[dimensionNumber].shape[1]
             Ns[dimensionNumber] = kroneckerProductBasisFunctions[dimensionNumber].shape[0]
             transposedKroneckerProductBasisFunctions.append(kroneckerProductBasisFunctions[dimensionNumber].T)
+
+        Ms_list = Ms.cpu().numpy().tolist()
+        Ns_list = Ns.cpu().numpy().tolist()
+        #print(Ms_list)
+        #print(Ms_list.reverse())
+        #print(Ns_list)
+        #print(Ns_list.reverse())
         y = self.projectKroneckerProductBasisFunctions(transposedKroneckerProductBasisFunctions,
-                                                       coefficients.reshape(Ms.cpu().numpy().tolist()) )
-        Y = y.reshape(Ns.cpu().numpy().tolist())
+                coefficients.T.reshape(Ms_list[::-1]).T )
+        Y = y.T.reshape(Ns_list[::-1]).T
         return Y
 
     def projectKroneckerProductBasisFunctions(self, kroneckerProductBasisFunctions, T):
@@ -42,16 +48,16 @@ class BiasField:
         #print(T.device)
         for dimensionNumber in range(numberOfDimensions):
             # Reshape into 2-D, do the work in the first dimension, and shape into N-D
-            T = T.reshape((currentSizeOfT[0], -1))
+            T = T.T.reshape((-1, currentSizeOfT[0])).T
             #print(kroneckerProductBasisFunctions[dimensionNumber].device)
             T = ( kroneckerProductBasisFunctions[dimensionNumber] ).T @ T
             currentSizeOfT[0] = kroneckerProductBasisFunctions[dimensionNumber].shape[1]
-            T = T.reshape(currentSizeOfT)
+            T = T.T.reshape(currentSizeOfT[::-1]).T
             # Shift dimension
             currentSizeOfT = currentSizeOfT[1:] + [currentSizeOfT[0]]
-            T = np.roll(T, 3, dims=0)
+            T = np.roll(T, 2, dims=0)
         # Return result as vector
-        coefficients = T.flatten()
+        coefficients = T.T.flatten()
         return coefficients.contiguous()
 
     def computePrecisionOfKroneckerProductBasisFunctions(self, kroneckerProductBasisFunctions, B):
@@ -66,31 +72,31 @@ class BiasField:
         # Compute a new set of basis functions (point-wise product of each combination of pairs) so that we can
         # easily compute a mangled version of the result
         Ms = np.zeros( numberOfDimensions, dtype=np.int64).cuda() # Number of basis functions in each dimension
-        print("awa")
+        #print("awa")
         hessianKroneckerProductBasisFunctions = {}
         for dimensionNumber in range(numberOfDimensions):
             M = kroneckerProductBasisFunctions[dimensionNumber].shape[1]
             A = kroneckerProductBasisFunctions[dimensionNumber].cuda()
             hessianKroneckerProductBasisFunctions[dimensionNumber] = np.kron( np.ones( (1, M )).cuda(), A ) * np.kron( A, np.ones( (1, M) ).cuda() ).cuda()
-            print("awoo")
+            #print("awoo")
             Ms[dimensionNumber] = M
         result = self.projectKroneckerProductBasisFunctions( hessianKroneckerProductBasisFunctions, B ).cuda()
-        print("awoowa")
+        #print("awoowa")
         new_shape = list(np.kron( Ms, np.tensor([ 1, 1 ]).cuda() ))
-        print("awa")
+        #print("awa")
         new_shape.reverse()
-        print("awa2")
+        #print("awa2")
         result = result.reshape(new_shape)
-        print("awa3")
+        #print("awa3")
         permutationIndices = tuple(np.hstack((2 * np.arange(numberOfDimensions), 2 * np.arange(numberOfDimensions) +1)).numpy().tolist())
-        print(permutationIndices)
+        #print(permutationIndices)
         result = np.permute(result, permutationIndices)
-        print("awa4")
-        print(result.shape)
+        #print("awa4")
+        #print(result.shape)
         new_shape = ( np.prod( Ms ), np.prod( Ms ) )
-        print(new_shape)
+        #print(new_shape)
         precisionMatrix = result.reshape(new_shape)
-        print("mengaoo")
+        #print("mengaoo")
         return precisionMatrix.cuda()
 
     def getBiasFieldBasisFunctions(self, imageSize, smoothingKernelSize):
@@ -162,21 +168,21 @@ class BiasField:
 
                 # Build up stuff needed for rhs
                 predicted = np.sum(classSpecificWeights * means[:, contrastNumber2], 1) / (weights + eps)
-                print(mask.shape)
-                print(imageBuffers.shape)
-                print(weights.shape)
+                #print(mask.shape)
+                #print(imageBuffers.shape)
+                #print(weights.shape)
                 residue = imageBuffers[..., contrastNumber2][mask] - predicted
                 tmp += weights * residue
 
                 # Fill in submatrix of lhs
                 weightsImageBuffer[mask] = weights
-                print(contrast1Indices.device)
-                print(contrast2Indices.device)
+                #print(contrast1Indices.device)
+                #print(contrast2Indices.device)
                 lhs[contrast1Indices[:,None], contrast2Indices[None,:]] \
                     = self.computePrecisionOfKroneckerProductBasisFunctions(self.basisFunctions,
                                                                        weightsImageBuffer)
 
-            print("aaaaaaaaaaanya")
+            #print("aaaaaaaaaaanya")
             tmpImageBuffer[mask] = tmp
             rhs[contrast1Indices] = self.projectKroneckerProductBasisFunctions(self.basisFunctions,
                                                                           tmpImageBuffer).reshape(-1, 1)
