@@ -1,4 +1,7 @@
-import numpy as np
+#import numpy as np
+import numpy as npy
+import torch as np
+
 from scipy.stats import invwishart
 
 eps = np.finfo( float ).eps
@@ -12,7 +15,7 @@ class GMM:
                  initialHyperVariancesNumberOfMeasurements=None, initialHyperMixtureWeights=None,
                  initialHyperMixtureWeightsNumberOfMeasurements=None ):
         #
-        self.numberOfGaussiansPerClass = numberOfGaussiansPerClass
+        self.numberOfGaussiansPerClass = np.tensor(numberOfGaussiansPerClass)
         self.numberOfClasses = len(self.numberOfGaussiansPerClass)
         self.numberOfGaussians = sum(self.numberOfGaussiansPerClass)
         self.numberOfContrasts = numberOfContrasts
@@ -36,7 +39,7 @@ class GMM:
         if initialHyperMeansNumberOfMeasurements is None:
             self.fullHyperMeansNumberOfMeasurements = np.zeros(self.numberOfGaussians)
         else:
-            self.fullHyperMeansNumberOfMeasurements = initialHyperMeansNumberOfMeasurements.copy()
+            self.fullHyperMeansNumberOfMeasurements = initialHyperMeansNumberOfMeasurements.clone()
         if initialHyperVariances is None:
             self.hyperVariances = np.tile(np.eye(self.numberOfContrasts), (self.numberOfGaussians, 1, 1))
         else:
@@ -44,21 +47,20 @@ class GMM:
         if initialHyperVariancesNumberOfMeasurements is None:
             self.fullHyperVariancesNumberOfMeasurements = np.zeros(self.numberOfGaussians)
         else:
-            self.fullHyperVariancesNumberOfMeasurements = initialHyperVariancesNumberOfMeasurements.copy()
+            self.fullHyperVariancesNumberOfMeasurements = initialHyperVariancesNumberOfMeasurements.clone()
         if initialHyperMixtureWeights is None:
             self.hyperMixtureWeights = np.ones(self.numberOfGaussians)
             for classNumber in range(self.numberOfClasses):
                 # mixture weights are normalized (those belonging to one mixture sum to one)
                 numberOfComponents = self.numberOfGaussiansPerClass[classNumber]
-                gaussianNumbers = np.array(np.sum(self.numberOfGaussiansPerClass[:classNumber]) + \
-                                           np.array(range(numberOfComponents)), dtype=np.uint32)
+                gaussianNumbers = (np.sum(self.numberOfGaussiansPerClass[:classNumber]) + np.arange(numberOfComponents)).to(np.int64)
                 self.hyperMixtureWeights[gaussianNumbers] /= np.sum(self.hyperMixtureWeights[gaussianNumbers])
         else:
             self.hyperMixtureWeights = initialHyperMixtureWeights
         if initialHyperMixtureWeightsNumberOfMeasurements is None:
             self.fullHyperMixtureWeightsNumberOfMeasurements = np.zeros(self.numberOfClasses)
         else:
-            self.fullHyperMixtureWeightsNumberOfMeasurements = initialHyperMixtureWeightsNumberOfMeasurements.copy()
+            self.fullHyperMixtureWeightsNumberOfMeasurements = initialHyperMixtureWeightsNumberOfMeasurements.clone()
 
         # Making sure the inverse-Wishart is normalizable (flat or peaked around hyperVariances)
         # requires that hyperVarianceNumberOfMeasurements is not smaller than (numberOfContrasts-1)
@@ -68,9 +70,9 @@ class GMM:
         threshold = (self.numberOfContrasts - 2) + 1 + eps
         self.fullHyperVariancesNumberOfMeasurements[self.fullHyperVariancesNumberOfMeasurements < threshold] = threshold
 
-        self.hyperMeansNumberOfMeasurements = self.fullHyperMeansNumberOfMeasurements.copy()
-        self.hyperVariancesNumberOfMeasurements = self.fullHyperVariancesNumberOfMeasurements.copy()
-        self.hyperMixtureWeightsNumberOfMeasurements = self.fullHyperMixtureWeightsNumberOfMeasurements.copy()
+        self.hyperMeansNumberOfMeasurements = self.fullHyperMeansNumberOfMeasurements.clone()
+        self.hyperVariancesNumberOfMeasurements = self.fullHyperVariancesNumberOfMeasurements.clone()
+        self.hyperMixtureWeightsNumberOfMeasurements = self.fullHyperMixtureWeightsNumberOfMeasurements.clone()
 
     def initializeGMMParameters(self, data, classPriors):
 
@@ -107,7 +109,7 @@ class GMM:
                 self.mixtureWeights[gaussianNumber] = 1 / numberOfComponents
 
         if self.tied:
-            self.previousVariances = self.variances.copy()
+            self.previousVariances = self.variances.clone()
 
     def getGaussianLikelihoods(self, data, mean, variance):
 
@@ -213,8 +215,7 @@ class GMM:
         for classNumber in range(self.numberOfClasses):
             # mixture weights are normalized (those belonging to one mixture sum to one)
             numberOfComponents = self.numberOfGaussiansPerClass[classNumber]
-            gaussianNumbers = np.array(np.sum(self.numberOfGaussiansPerClass[:classNumber]) + \
-                                       np.array(range(numberOfComponents)), dtype=np.uint32)
+            gaussianNumbers = (np.sum(self.numberOfGaussiansPerClass[:classNumber]) + np.arange(numberOfComponents)).to(np.int64)
 
             self.mixtureWeights[gaussianNumbers] += self.hyperMixtureWeights[gaussianNumbers] * \
                                                self.hyperMixtureWeightsNumberOfMeasurements[classNumber]
@@ -351,10 +352,10 @@ class GMM:
 
     def sampleMeansAndVariancesConditioned(self, data, posterior, gaussianNumber):
         tmpGmm = GMM([1], self.numberOfContrasts, self.useDiagonalCovarianceMatrices,
-                  initialHyperMeans=np.array([self.hyperMeans[gaussianNumber]]),
-                  initialHyperMeansNumberOfMeasurements=np.array([self.hyperMeansNumberOfMeasurements[gaussianNumber]]),
-                  initialHyperVariances=np.array([self.hyperVariances[gaussianNumber]]),
-                  initialHyperVariancesNumberOfMeasurements=np.array([self.hyperVariancesNumberOfMeasurements[gaussianNumber]]))
+                  initialHyperMeans=np.tensor([self.hyperMeans[gaussianNumber]]),
+                  initialHyperMeansNumberOfMeasurements=np.tensor([self.hyperMeansNumberOfMeasurements[gaussianNumber]]),
+                  initialHyperVariances=np.tensor([self.hyperVariances[gaussianNumber]]),
+                  initialHyperVariancesNumberOfMeasurements=np.tensor([self.hyperVariancesNumberOfMeasurements[gaussianNumber]]))
         tmpGmm.initializeGMMParameters(data, posterior)
         tmpGmm.fitGMMParameters(data, posterior)
         N = posterior.sum()

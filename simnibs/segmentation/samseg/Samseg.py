@@ -1,5 +1,6 @@
 import os
-import numpy as np
+#import numpy as np
+import torch as np
 import pickle
 import scipy.io
 #import freesurfer as fs
@@ -355,7 +356,8 @@ class Samseg:
 
             # Downsample the images, the mask, the mesh, and the bias field basis functions (integer)
             logger.info('Setting up downsampled model')
-            downSamplingFactors = np.uint32(np.round(optimizationOptions.multiResolutionSpecification
+            #downSamplingFactors = np.uint32(np.round(optimizationOptions.multiResolutionSpecification
+            downSamplingFactors = np.int64(np.round(optimizationOptions.multiResolutionSpecification
                                                      [
                                                          multiResolutionLevel].targetDownsampledVoxelSpacing / self.voxelSpacing))
             downSamplingFactors[downSamplingFactors < 1] = 1
@@ -422,9 +424,11 @@ class Samseg:
                                                      for i in range(downSampledBiasFields.shape[-1])],
                                          auto_scale=True, window_id='bias field', title='Bias Fields')
 
+                    print("E step")
                     # E-step: compute the downSampledGaussianPosteriors based on the current parameters
                     downSampledGaussianPosteriors, minLogLikelihood = self.gmm.getGaussianPosteriors(downSampledData,
                                                                                                      downSampledClassPriors)
+                    print("Finished E step")
 
                     # Compute the log-posterior of the model parameters, and check for convergence
                     minLogGMMParametersPrior = self.gmm.evaluateMinLogPriorOfGMMParameters()
@@ -441,11 +445,13 @@ class Samseg:
                         logger.info('EM converged!')
                         break
 
+                    print("M step")
                     # M-step: update the model parameters based on the current posterior
                     #
                     # First the mixture model parameters
                     if not ((iterationNumber == 0) and skipGMMParameterEstimationInFirstIteration):
                         self.gmm.fitGMMParameters(downSampledData, downSampledGaussianPosteriors)
+                    print("Finished M step")
 
                     # Now update the parameters of the bias field model.
                     if (estimateBiasField and not ((iterationNumber == 0)
