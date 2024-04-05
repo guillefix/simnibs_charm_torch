@@ -17,8 +17,13 @@ import charm_gems as gems
 import logging
 import torch as np
 import torch.nn.functional as F
+import time
 
 eps = np.finfo(float).eps
+
+def expand_dims(x, dim):
+    return x.unsqueeze(dim)
+
 
 
 class Samseg:
@@ -108,6 +113,7 @@ class Samseg:
                                                                     initTransform=initTransform)
 
     def preProcess(self):
+        print("Preprocessing")
         # =======================================================================================
         #
         # Preprocessing (reading and masking of data)
@@ -146,11 +152,12 @@ class Samseg:
             self.visualizer.show(images=self.imageBuffers, window_id='samsegment images',
                                  title='Samsegment Masked and Log-Transformed Contrasts')
 
-        self.imageBuffers = np.tensor(self.imageBuffers)
+        self.imageBuffers = np.tensor(self.imageBuffers).cuda()
         #self.transform = np.tensor(self.transform)
         #self.voxelSpacing = np.tensor(self.voxelSpacing)
         #self.cropping = np.tensor(self.cropping)
-        self.mask = np.tensor(self.mask)
+        self.mask = np.tensor(self.mask).cuda()
+        print("Finished Preprocessing")
 
     def process(self):
         # =======================================================================================
@@ -263,7 +270,7 @@ class Samseg:
         numberOfContrasts = self.imageBuffers.shape[-1]
         downSampledMask = self.mask[::downSamplingFactors[0], ::downSamplingFactors[1], ::downSamplingFactors[2]]
         #downSampledImageBuffers = np.zeros(downSampledMask.shape + (numberOfContrasts,), order='F')
-        downSampledImageBuffers = np.zeros(downSampledMask.shape + (numberOfContrasts,))
+        downSampledImageBuffers = np.zeros(downSampledMask.shape + (numberOfContrasts,)).cuda()
         for contrastNumber in range(numberOfContrasts):
             # logger.debug('first time contrastNumber=%d', contrastNumber)
             downSampledImageBuffers[:, :, :, contrastNumber] = self.imageBuffers[::downSamplingFactors[0],
@@ -370,7 +377,7 @@ class Samseg:
             # Downsample the images, the mask, the mesh, and the bias field basis functions (integer)
             logger.info('Setting up downsampled model')
             #downSamplingFactors = np.uint32(np.round(optimizationOptions.multiResolutionSpecification
-            downSamplingFactors = np.round(np.tensor(optimizationOptions.multiResolutionSpecification[multiResolutionLevel].targetDownsampledVoxelSpacing / self.voxelSpacing)).to(np.int64)
+            downSamplingFactors = np.round(np.tensor(optimizationOptions.multiResolutionSpecification[multiResolutionLevel].targetDownsampledVoxelSpacing / self.voxelSpacing)).to(np.int64).cuda()
             downSamplingFactors[downSamplingFactors < 1] = 1
             downSampledImageBuffers, downSampledMask, downSampledMesh, downSampledInitialDeformationApplied, \
             downSampledTransform = self.getDownSampledModel(
@@ -379,7 +386,7 @@ class Samseg:
             self.biasField.downSampleBasisFunctions(downSamplingFactors)
 
             # Also downsample the strength of the hyperprior, if any
-            print(type(downSamplingFactors))
+            print("Also downsample the strength of the hyperprior, if any")
             self.gmm.downsampledHyperparameters(downSamplingFactors)
 
             # Save initial position at the start of this multi-resolution level
@@ -406,85 +413,111 @@ class Samseg:
                 # Part I: estimate Gaussian mixture model parameters, as well as bias field parameters using EM.
 
                 # Get the priors at the current mesh position
+                print("Get the priors at the current mesh position")
                 tmp = downSampledMesh.rasterize_2(downSampledMask.shape, -1)
-                downSampledClassPriors = tmp[downSampledMask] / 65535
+                downSampledClassPriors = tmp[downSampledMask.cpu().numpy()] / 65535
+                downSampledClassPriors = np.tensor(downSampledClassPriors).to(np.float).cuda()
 
                 # Initialize the model parameters if needed
+                print("Initialize the model parameters if needed")
                 if self.gmm.means is None:
                     self.gmm.initializeGMMParameters(downSampledImageBuffers[downSampledMask, :],
                                                      downSampledClassPriors)
 
+                print("biasField.coefficients")
                 if self.biasField.coefficients is None:
                     numberOfBasisFunctions = [functions.shape[1] for functions in self.biasField.basisFunctions]
                     numberOfContrasts = downSampledImageBuffers.shape[-1]
-                    initialBiasFieldCoefficients = np.zeros((np.prod(numberOfBasisFunctions), numberOfContrasts))
+                    initialBiasFieldCoefficients = np.zeros((np.prod(np.tensor(numberOfBasisFunctions)), numberOfContrasts)).cuda()
                     self.biasField.setBiasFieldCoefficients(initialBiasFieldCoefficients)
 
                 # Start EM iterations
+                print("Start EM iterations")
                 historyOfEMCost = [1 / eps]
                 EMIterationNumber = 0
+
+                downSampledMask_cpu = downSampledMask.cpu().numpy()
 
                 while True:
                     logger.info('EMIterationNumber=%d', EMIterationNumber)
 
                     # Precompute intensities after bias field correction for later use (really only caching something that
                     # doesn't really figure in the model
-                    downSampledBiasFields = self.biasField.getBiasFields(downSampledMask)
+                    downSampledBiasFields = self.biasField.getBiasFields(downSampledMask).to(np.float)
+                    #print(downSampledImageBuffers)
                     downSampledData = downSampledImageBuffers[downSampledMask, :] - downSampledBiasFields[
                                                                                     downSampledMask, :]
-                    self.visualizer.show(image_list=[downSampledBiasFields[..., i]
-                                                     for i in range(downSampledBiasFields.shape[-1])],
-                                         auto_scale=True, window_id='bias field', title='Bias Fields')
+                    #self.visualizer.show(image_list=[downSampledBiasFields.cpu().numpy()[..., i]
+                    #                                 for i in range(downSampledBiasFields.shape[-1])],
+                    #                     auto_scale=True, window_id='bias field', title='Bias Fields')
 
-                    print("E step")
+                    #print("E step")
                     # E-step: compute the downSampledGaussianPosteriors based on the current parameters
+                    current_time = time.time()
+                    print(downSampledData.shape)
+                    print(downSampledClassPriors.shape)
                     downSampledGaussianPosteriors, minLogLikelihood = self.gmm.getGaussianPosteriors(downSampledData,
                                                                                                      downSampledClassPriors)
-                    print("Finished E step")
+                    end_time = time.time()
+                    duration = end_time - current_time
+                    print(f"Duration E step: {duration} seconds")
+                    #print("Finished E step")
 
                     # Compute the log-posterior of the model parameters, and check for convergence
+                    current_time = time.time()
                     minLogGMMParametersPrior = self.gmm.evaluateMinLogPriorOfGMMParameters()
+                    end_time = time.time()
+                    duration = end_time - current_time
+                    print(f"Duration logprior: {duration} seconds")
 
-                    historyOfEMCost.append(minLogLikelihood + minLogGMMParametersPrior)
-                    self.visualizer.plot(historyOfEMCost[1:], window_id='history of EM cost',
-                                         title='History of EM Cost (level: ' + str(multiResolutionLevel) +
-                                               ' iteration: ' + str(iterationNumber) + ')')
+                    historyOfEMCost.append((minLogLikelihood + minLogGMMParametersPrior).cpu().numpy().item())
+                    #self.visualizer.plot(historyOfEMCost[1:], window_id='history of EM cost',
+                    #                     title='History of EM Cost (level: ' + str(multiResolutionLevel) +
+                    #                           ' iteration: ' + str(iterationNumber) + ')')
                     EMIterationNumber += 1
                     changeCostEMPerVoxel = (historyOfEMCost[-2] - historyOfEMCost[-1]) / downSampledData.shape[0]
                     changeCostEMPerVoxelThreshold = optimizationOptions.absoluteCostPerVoxelDecreaseStopCriterion
+                    print(changeCostEMPerVoxel)
+                    print(changeCostEMPerVoxelThreshold)
                     if (EMIterationNumber == 100) or (changeCostEMPerVoxel < changeCostEMPerVoxelThreshold):
                         # Converged
                         logger.info('EM converged!')
                         break
 
-                    print("M step")
+                    #print("M step")
                     # M-step: update the model parameters based on the current posterior
                     #
                     # First the mixture model parameters
                     if not ((iterationNumber == 0) and skipGMMParameterEstimationInFirstIteration):
+                        current_time = time.time()
                         self.gmm.fitGMMParameters(downSampledData, downSampledGaussianPosteriors)
-                    print("Finished M step")
+                        end_time = time.time()
+                        duration = end_time - current_time
+                        print(f"Duration M step: {duration} seconds")
+                    #print("Finished M step")
 
                     # Now update the parameters of the bias field model.
                     if (estimateBiasField and not ((iterationNumber == 0)
                                                    and skipBiasFieldParameterEstimationInFirstIteration)):
-                        self.biasField.fitBiasFieldParameters(downSampledImageBuffers, downSampledGaussianPosteriors,
-                                                              self.gmm.means, self.gmm.variances, downSampledMask)
+                        self.biasField.fitBiasFieldParameters(downSampledImageBuffers, downSampledGaussianPosteriors, self.gmm.means, self.gmm.variances, downSampledMask)
                     # End test if bias field update
 
                 # End loop over EM iterations
+                print("End loop over EM iterations")
                 historyOfEMCost = historyOfEMCost[1:]
 
                 # Visualize the posteriors
+                print("Visualize the posteriors")
                 if hasattr(self.visualizer, 'show_flag'):
                     tmp = np.zeros(downSampledMask.shape + (downSampledGaussianPosteriors.shape[-1], ))
-                    tmp[downSampledMask, :] = downSampledGaussianPosteriors
-                    self.visualizer.show(probabilities=tmp, images=downSampledImageBuffers,
+                    tmp[downSampledMask, :] = downSampledGaussianPosteriors.cpu()
+                    self.visualizer.show(probabilities=tmp, images=downSampledImageBuffers.cpu().numpy(),
                                          window_id='EM Gaussian posteriors',
                                          title='EM Gaussian posteriors (level: ' + str(multiResolutionLevel) +
                                                ' iteration: ' + str(iterationNumber) + ')')
 
                 # Part II: update the position of the mesh nodes for the current mixture model and bias field parameter estimates
+                print("Part II")
                 optimizationParameters = {
                     'Verbose': optimizationOptions.verbose,
                     'MaximalDeformationStopCriterion': optimizationOptions.maximalDeformationStopCriterion,
@@ -493,16 +526,17 @@ class Samseg:
                     'BFGS-MaximumMemoryLength': optimizationOptions.BFGSMaximumMemoryLength
                 }
                 historyOfDeformationCost, historyOfMaximalDeformation, maximalDeformationApplied, minLogLikelihoodTimesDeformationPrior = \
-                    self.probabilisticAtlas.deformMesh(downSampledMesh, downSampledTransform, downSampledData,
-                                                       downSampledMask,
-                                                       self.gmm.means, self.gmm.variances, self.gmm.mixtureWeights,
-                                                       self.gmm.numberOfGaussiansPerClass, optimizationParameters)
+                    self.probabilisticAtlas.deformMesh(downSampledMesh, downSampledTransform, downSampledData.cpu().numpy(),
+                                                       downSampledMask.cpu().numpy(),
+                                                       self.gmm.means.cpu().numpy(), self.gmm.variances.cpu().numpy(), self.gmm.mixtureWeights.cpu().numpy(),
+                                                       self.gmm.numberOfGaussiansPerClass.cpu().numpy(), optimizationParameters)
 
                 # print summary of iteration
+                print("print summary of iteration")
                 logger.info('iterationNumber: %d' % iterationNumber)
                 logger.info('maximalDeformationApplied: %.4f' % maximalDeformationApplied)
                 logger.info('=======================================================')
-                self.visualizer.show(mesh=downSampledMesh, images=downSampledImageBuffers,
+                self.visualizer.show(mesh=downSampledMesh, images=downSampledImageBuffers.cpu().numpy(),
                                      window_id='Mesh deformation (level ' + str(multiResolutionLevel) + ')',
                                      title='Mesh Deformation (level ' + str(multiResolutionLevel) + ')')
 
@@ -510,24 +544,25 @@ class Samseg:
                 if self.saveHistory:
                     levelHistory['historyWithinEachIteration'].append({
                         'historyOfEMCost': historyOfEMCost,
-                        'mixtureWeights': self.gmm.mixtureWeights,
-                        'means': self.gmm.means,
-                        'variances': self.gmm.variances,
-                        'biasFieldCoefficients': self.biasField.coefficients,
+                        'mixtureWeights': self.gmm.mixtureWeights.cpu().numpy(),
+                        'means': self.gmm.means.cpu().numpy(),
+                        'variances': self.gmm.variances.cpu().numpy(),
+                        'biasFieldCoefficients': self.biasField.coefficients.cpu().numpy(),
                         'historyOfDeformationCost': historyOfDeformationCost,
                         'historyOfMaximalDeformation': historyOfMaximalDeformation,
                         'maximalDeformationApplied': maximalDeformationApplied
                     })
 
                 # Check for convergence
-                historyOfCost.append(minLogLikelihoodTimesDeformationPrior + minLogGMMParametersPrior)
+                print("Check for convergence")
+                historyOfCost.append((minLogLikelihoodTimesDeformationPrior + minLogGMMParametersPrior).cpu().numpy().item())
                 self.visualizer.plot(historyOfCost[1:],
                                      window_id='history of cost (level ' + str(multiResolutionLevel) + ')',
                                      title='History of Cost (level ' + str(multiResolutionLevel) + ')')
                 previousCost = historyOfCost[-2]
                 currentCost = historyOfCost[-1]
                 costChange = previousCost - currentCost
-                perVoxelDecrease = costChange / np.count_nonzero(downSampledMask)
+                perVoxelDecrease = costChange / np.count_nonzero(downSampledMask).cpu().numpy()
                 perVoxelDecreaseThreshold = optimizationOptions.absoluteCostPerVoxelDecreaseStopCriterion
                 if perVoxelDecrease < perVoxelDecreaseThreshold:
                     break
@@ -539,7 +574,7 @@ class Samseg:
 
             # Log the final per-voxel cost
             self.optimizationSummary.append({'numberOfIterations': iterationNumber + 1,
-                                             'perVoxelCost': currentCost / np.count_nonzero(downSampledMask)})
+                                             'perVoxelCost': currentCost / np.count_nonzero(downSampledMask).cpu().numpy()})
 
             # Get the final node positions
             finalNodePositions = downSampledMesh.points
@@ -555,17 +590,17 @@ class Samseg:
 
             # Save history of the estimation
             if self.saveHistory:
-                levelHistory['downSamplingFactors'] = downSamplingFactors
-                levelHistory['downSampledImageBuffers'] = downSampledImageBuffers
-                levelHistory['downSampledMask'] = downSampledMask
+                levelHistory['downSamplingFactors'] = downSamplingFactors.cpu().numpy()
+                levelHistory['downSampledImageBuffers'] = downSampledImageBuffers.cpu().numpy()
+                levelHistory['downSampledMask'] = downSampledMask.cpu().numpy()
                 levelHistory['downSampledTransformMatrix'] = downSampledTransform.as_numpy_array
                 levelHistory['initialNodePositions'] = initialNodePositions
                 levelHistory['finalNodePositions'] = finalNodePositions
                 levelHistory['initialNodePositionsInTemplateSpace'] = initialNodePositionsInTemplateSpace
                 levelHistory['finalNodePositionsInTemplateSpace'] = finalNodePositionsInTemplateSpace
                 levelHistory['historyOfCost'] = historyOfCost
-                levelHistory['priorsAtEnd'] = downSampledClassPriors
-                levelHistory['posteriorsAtEnd'] = downSampledGaussianPosteriors
+                levelHistory['priorsAtEnd'] = downSampledClassPriors.cpu().numpy()
+                levelHistory['posteriorsAtEnd'] = downSampledGaussianPosteriors.cpu().numpy()
                 self.optimizationHistory.append(levelHistory)
 
         # End resolution level loop
@@ -585,7 +620,7 @@ class Samseg:
         # Make sure that the bias field basis function are not downsampled
         # (this might happens if the parameters estimation is made only with one downsampled resolution)
         self.biasField.downSampleBasisFunctions([1, 1, 1])
-        biasFields = self.biasField.getBiasFields()
+        biasFields = self.biasField.getBiasFields().cpu().numpy()
         data = self.imageBuffers[self.mask, :] - biasFields[self.mask, :]
 
         # Compute the posterior distribution of the various structures
