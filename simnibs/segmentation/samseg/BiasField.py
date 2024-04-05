@@ -55,7 +55,7 @@ class BiasField:
             T = T.T.reshape(currentSizeOfT[::-1]).T
             # Shift dimension
             currentSizeOfT = currentSizeOfT[1:] + [currentSizeOfT[0]]
-            T = np.roll(T, 2, dims=0)
+            T = np.moveaxis(T, 0, 2)
         # Return result as vector
         coefficients = T.T.flatten()
         return coefficients.contiguous()

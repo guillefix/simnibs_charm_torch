@@ -527,11 +527,12 @@ class Samseg:
                     'MaximumNumberOfIterations': optimizationOptions.maximumNumberOfDeformationIterations,
                     'BFGS-MaximumMemoryLength': optimizationOptions.BFGSMaximumMemoryLength
                 }
-                historyOfDeformationCost, historyOfMaximalDeformation, maximalDeformationApplied, minLogLikelihoodTimesDeformationPrior = \
-                    self.probabilisticAtlas.deformMesh(downSampledMesh, downSampledTransform, downSampledData.cpu().numpy(),
-                                                       downSampledMask.cpu().numpy(),
-                                                       self.gmm.means.cpu().numpy(), self.gmm.variances.cpu().numpy(), self.gmm.mixtureWeights.cpu().numpy(),
-                                                       self.gmm.numberOfGaussiansPerClass.cpu().numpy(), optimizationParameters)
+                if iterationNumber % 5 == 0:
+                    historyOfDeformationCost, historyOfMaximalDeformation, maximalDeformationApplied, minLogLikelihoodTimesDeformationPrior = \
+                        self.probabilisticAtlas.deformMesh(downSampledMesh, downSampledTransform, downSampledData.cpu().numpy(),
+                                                           downSampledMask.cpu().numpy(),
+                                                           self.gmm.means.cpu().numpy(), self.gmm.variances.cpu().numpy(), self.gmm.mixtureWeights.cpu().numpy(),
+                                                           self.gmm.numberOfGaussiansPerClass.cpu().numpy(), optimizationParameters)
 
                 # print summary of iteration
                 print("print summary of iteration")
