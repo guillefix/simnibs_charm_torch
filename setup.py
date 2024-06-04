@@ -157,8 +157,11 @@ elif sys.platform == 'linux':
     ]
     # To find the boost headers if installed with conda
     if is_conda:
-        #cgal_include += [os.path.join(os.environ['CONDA_PREFIX'], 'include')]
-        cgal_include += [os.path.join("~/nudge3/miniconda3/envs/simnibs/include/", 'include')]
+        cgal_include += [os.path.join(os.environ['CONDA_PREFIX'], 'include')]
+        cgal_include += ["/usr/include/"]
+        cgal_include += ["/usr/include/boost/"]
+        cgal_include += ["/usr/include/x86_64-linux-gnu/"]
+        #cgal_include += [os.path.join("~/nudge3/miniconda3/envs/simnibs/include/", 'include')]
     cgal_dirs = ['simnibs/external/lib/linux']
     #cgal_dirs = ['/usr/include/CGAL']
     cgal_runtime = ['$ORIGIN/../../external/lib/linux']
