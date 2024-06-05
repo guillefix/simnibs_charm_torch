@@ -10,6 +10,8 @@ import tarfile
 from setuptools.command.build_ext import build_ext
 from distutils.dep_util import newer_group
 import numpy as np
+#os.environ['CFLAGS'] = '-H'
+
 
 
 ''' C extensions
@@ -149,6 +151,10 @@ elif sys.platform == 'linux':
     cgal_libs = ['mpfr', 'gmp', 'z', 'tbb', 'tbbmalloc', 'pthread']
     cgal_include = [
         np.get_include(),
+        '/usr/include',
+        '/usr/include/x86_64-linux-gnu',
+        #'/home/guillefix/miniconda3/include',
+        #'/home/guillefix/simnibs/CGAL-5.4/include',
         CGAL_headers,
         eigen_headers,
         tbb_headers,
@@ -158,9 +164,11 @@ elif sys.platform == 'linux':
     # To find the boost headers if installed with conda
     if is_conda:
         cgal_include += [os.path.join(os.environ['CONDA_PREFIX'], 'include')]
-        cgal_include += ["/usr/include/"]
-        cgal_include += ["/usr/include/boost/"]
-        cgal_include += ["/usr/include/x86_64-linux-gnu/"]
+        #cgal_include += ["/usr/include/"]
+        #cgal_include += ["/usr/include/boost/"]
+        #cgal_include += ["/usr/include/x86_64-linux-gnu/"]
+        #cgal_include += ["/home/guillefix/simnibs/gmp-6.2.1/"]
+        #cgal_include += ["/home/guillefix/simnibs/build/lib.linux-x86_64-cpython-310/simnibs/external/include/linux/gmp/"]
         #cgal_include += [os.path.join("~/nudge3/miniconda3/envs/simnibs/include/", 'include')]
     cgal_dirs = ['simnibs/external/lib/linux']
     #cgal_dirs = ['/usr/include/CGAL']
@@ -252,6 +260,7 @@ petsc_solver = Extension(
 # I separated the CGAL functions into several files for two reasons
 # 1. Reduce memory consumption during compilation in Linux
 # 2. Fix some compilation problems in Windows
+print(cgal_include)
 create_mesh_surf = Extension(
     'simnibs.mesh_tools.cgal.create_mesh_surf',
     sources=["simnibs/mesh_tools/cgal/create_mesh_surf.pyx"],
