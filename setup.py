@@ -381,7 +381,8 @@ class build_ext_(build_ext):
                 'newer'
             )
         )
-        if self.force or changed_meshing:
+        #if self.force or changed_meshing:
+        if True:
             download_and_extract(CGAL_url)
             if self.inplace:
                 build_lib = ""
