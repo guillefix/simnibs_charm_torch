@@ -406,9 +406,9 @@ class build_ext_(build_ext):
         # Compile
         build_ext.run(self)
         # cleanup downloads
-        if self.force or changed_meshing:
-            shutil.rmtree(f'CGAL-{CGAL_version}', ignore_errors=True)
-            shutil.rmtree(tbb_path, ignore_errors=True)
+        #if self.force or changed_meshing:
+        #    shutil.rmtree(f'CGAL-{CGAL_version}', ignore_errors=True)
+        #    shutil.rmtree(tbb_path, ignore_errors=True)
         # Remove unescessary binary files
         linux_folders = [
             os.path.join(self.build_lib, 'simnibs', 'external', 'bin', 'linux'),
