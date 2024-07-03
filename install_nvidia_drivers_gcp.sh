@@ -34,11 +34,11 @@ cd ..
 
 #Installing the driver version 550
 wget https://developer.download.nvidia.com/compute/cuda/12.4.0/local_installers/cuda_12.4.0_550.54.14_linux.run
-sudo sh cuda_12.4.0_550.54.14_linux.run --silent --driver
 
 #Installing the toolkit version 12.2
 wget https://developer.download.nvidia.com/compute/cuda/12.2.0/local_installers/cuda_12.2.0_535.54.03_linux.run
 sudo sh cuda_12.2.0_535.54.03_linux.run --silent --toolkit
+sudo sh cuda_12.4.0_550.54.14_linux.run --silent --driver
 
 # Download the CUDA installer
 #curl -L https://github.com/GoogleCloudPlatform/compute-gpu-installation/releases/download/cuda-installer-v1.0.0/cuda_installer.pyz --output cuda_installer.pyz

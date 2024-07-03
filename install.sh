@@ -5,12 +5,12 @@
 
 source ~/.bashrc
 
-sudo apt install software-properties-common
+sudo apt install -y software-properties-common
 
-sudo add-apt-repository ppa:deadsnakes/ppa
+sudo add-apt-repository -y ppa:deadsnakes/ppa
 sudo apt update
-sudo apt install python3.10
-sudo apt install python3.10-distutils
+sudo apt install -y python3.10
+sudo apt install -y python3.10-distutils
 curl https://bootstrap.pypa.io/get-pip.py -o get-pip.py
 sudo python3.10 get-pip.py
 
