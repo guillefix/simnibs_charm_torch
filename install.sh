@@ -73,8 +73,8 @@ export CXX=g++-7
 
 # Clone simnibs and install it
 python3 setup.py clean
-rm -r build/
-python3 setup.py install --user
+#rm -r build/
+#python3 setup.py install --user
 
 # Install simnibs in editable mode
 #$PIP install --editable .
@@ -87,4 +87,4 @@ echo 'export LD_LIBRARY_PATH='$(pwd)'/simnibs/external/lib/linux/:$LD_LIBRARY_PA
 source ~/.bashrc
 
 # Link external programs for simnibs
-python3 simnibs/cli/link_external_progs.py
+#python3 simnibs/cli/link_external_progs.py
